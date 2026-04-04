@@ -123,6 +123,26 @@ const pinCursorStyle = {
 
 // --- 主应用组件 ---
 export default function App() {
+  // --- 自动注入 Tailwind 样式库 (新手免配置补丁) ---
+  useEffect(() => {
+    if (!document.getElementById('tailwind-cdn')) {
+      const script = document.createElement('script');
+      script.id = 'tailwind-cdn';
+      script.src = 'https://cdn.tailwindcss.com';
+      document.head.appendChild(script);
+    }
+    // 强制覆盖 Vite 默认的全局样式，防止 UI 崩溃或被强行居中挤压
+    if (!document.getElementById('vite-reset')) {
+      const style = document.createElement('style');
+      style.id = 'vite-reset';
+      style.innerHTML = `
+        #root { max-width: 100% !important; margin: 0 !important; padding: 0 !important; text-align: left !important; width: 100%; }
+        body { margin: 0 !important; display: block !important; min-width: 100vw !important; min-height: 100vh !important; background-color: #fafaf9; }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
   const [hoursCount, setHoursCount] = useState(16); 
   const [pins, setPins] = useState([]); 
   const [ranges, setRanges] = useState([]); 
