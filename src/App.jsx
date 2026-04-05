@@ -181,6 +181,9 @@ export default function App() {
   const [ambientMessage, setAmbientMessage] = useState("新的一天，按住并拖动画出你的时间线。");
   const [activeZId, setActiveZId] = useState(null);
 
+  // 【核心修复】：将 bool 状态换成对象，记录手指初始物理坐标
+  const [resizeState, setResizeState] = useState(null); 
+  
   const saveTimerRef = useRef(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
 
@@ -248,7 +251,7 @@ export default function App() {
   }, [pins, ranges, hoursCount, activeRecordId, activeRecordName, isLoaded, historyList, tailwindLoaded]);
 
   const trackRef = useRef(null); const containerRef = useRef(null); 
-  const [isResizing, setIsResizing] = useState(false); const [connectingPin, setConnectingPin] = useState(null);
+  const [connectingPin, setConnectingPin] = useState(null);
   const [trackDragState, setTrackDragState] = useState(null); const [dragCurrentPos, setDragCurrentPos] = useState({ x: 0, y: 0 });
   const [draggingLabel, setDraggingLabel] = useState(null); const [isNamingRecord, setIsNamingRecord] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
@@ -310,9 +313,18 @@ export default function App() {
 
   const handlePointerMove = (e) => {
     const pos = getRelativePos(e.clientX, e.clientY);
-    const mins = getMinsFromPointerX(e.clientX);
+    
+    // 【核心修复】：基于纯物理屏幕滑动的 Delta 计算，彻底免疫画板重排回弹导致的数据错乱！
+    if (resizeState) {
+      const deltaX = e.clientX - resizeState.startX;
+      const deltaMins = deltaX / PIXELS_PER_MINUTE;
+      const newHours = resizeState.startHours + (deltaMins / 60);
+      setHoursCount(Math.max(4, Math.min(24, Math.round(newHours * 4) / 4))); 
+      return; 
+    }
 
     if (trackDragState) {
+      const mins = getMinsFromPointerX(e.clientX);
       setTrackDragState(prev => ({ ...prev, currentMins: Math.max(0, Math.min(hoursCount * 60, mins)) })); return;
     }
     if (draggingLabel) {
@@ -321,13 +333,19 @@ export default function App() {
       else if (draggingLabel.type === 'range') setRanges(ranges.map(r => r.id === draggingLabel.id ? { ...r, offset: { x: draggingLabel.startOffsetX + dx, y: draggingLabel.startOffsetY + dy } } : r));
       return;
     }
-    if (isResizing) { setHoursCount(Math.max(4, Math.min(24, Math.round(mins / 15) * 0.25))); return; }
     if (connectingPin) setDragCurrentPos(pos);
   };
 
   const handlePointerUp = (e) => {
     try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
     
+    // 【核心修复】：释放时清空调整状态
+    if (resizeState) { 
+      setResizeState(null); 
+      setAmbientMessage(`时间线总长度变为了 ${hoursCount} 个段落。`); 
+      return; 
+    }
+
     if (trackDragState) {
       const { startMins, currentMins } = trackDragState;
       if (Math.abs(currentMins - startMins) < 10) {
@@ -340,7 +358,7 @@ export default function App() {
       setTrackDragState(null); return;
     }
     if (draggingLabel) { setDraggingLabel(null); return; }
-    if (isResizing) { setIsResizing(false); setAmbientMessage(`时间线总长度变为了 ${hoursCount} 个段落。`); }
+    
     if (connectingPin) {
       const dropMins = getMinsFromPointerX(e.clientX);
       const targetPin = pins.find(p => p.id !== connectingPin.id && Math.abs(p.time - dropMins) <= 15);
@@ -395,7 +413,7 @@ export default function App() {
           <line x1="12" y1="18" x2="12.01" y2="18"></line>
         </svg>
         <h2 className="text-xl font-bold tracking-widest mb-2">请横置手机使用</h2>
-        <p className="text-stone-400 text-xs text-center px-8 leading-relaxed">本应用专为横向时间线布局打造<br/>请横置手机使用</p>
+        <p className="text-stone-400 text-xs text-center px-8 leading-relaxed">本应用专为横向时间线布局打造<br/>若系统已锁定方向，请在控制中心临时关闭</p>
       </div>
 
       <header className="absolute top-0 left-0 w-full px-6 py-4 flex justify-between items-center opacity-70 z-40 bg-gradient-to-b from-stone-50 via-stone-50/80 to-transparent pointer-events-none">
@@ -452,7 +470,7 @@ export default function App() {
         <div className="w-full h-full overflow-x-auto overflow-y-hidden custom-scrollbar outline-none touch-pan-x" ref={trackRef}>
           <div className="relative h-[320px] mx-12 min-w-[800px] mt-[10vh]" ref={containerRef} style={{ width: `${totalWidth + 120}px` }}>
             
-            <div className="absolute left-0 w-full z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '32px', width: '200vw', left: '-50vw', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
+            <div className="absolute z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '32px', width: '200vw', left: '-50vw', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
 
             {trackDragState && (
               <div className="absolute z-50 pointer-events-none flex flex-col items-center transition-none" style={{ left: `${trackDragState.currentMins * PIXELS_PER_MINUTE}px`, top: `${BASE_Y - 80}px`, bottom: '0', width: '2px' }}>
@@ -493,11 +511,18 @@ export default function App() {
               })}
             </svg>
 
-            {/* 【极致优化】：横跨半个屏幕高的巨型隐形拖拽力场，绝对锁死防滚屏 */}
-            <div className="absolute -translate-y-1/2 flex items-center justify-center cursor-ew-resize group z-50 interactive-element touch-none" style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px`, width: '80px', height: '120px', transform: 'translate(-50%, -50%)' }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.target.setPointerCapture(e.pointerId); setIsResizing(true); }}>
-              {isResizing && <div className="absolute -top-6 bg-stone-800 text-stone-100 text-xs px-2 py-1 rounded shadow-md whitespace-nowrap animate-in fade-in zoom-in duration-150 pointer-events-none">{hoursCount} 段</div>}
-              {/* 可见的手柄外观 */}
-              <div className={`w-4 h-10 border rounded-md transition-colors flex items-center justify-center shadow-sm pointer-events-none ${isResizing ? 'bg-stone-200 border-stone-500 scale-110' : 'bg-stone-100 border-stone-300 group-hover:border-stone-500 group-hover:bg-stone-200'}`}><div className="w-[2px] h-4 bg-stone-400 rounded-full" /></div>
+            {/* 【核心修复】：为段落手柄加入超大的、防滚屏强制锁定的隐形热区 */}
+            <div 
+              className="absolute -translate-y-1/2 flex items-center justify-center cursor-ew-resize group z-50 interactive-element touch-none" 
+              style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px`, width: '80px', height: '120px', transform: 'translate(-50%, -50%)' }} 
+              onPointerDown={(e) => { 
+                e.stopPropagation(); e.preventDefault(); 
+                e.target.setPointerCapture(e.pointerId); 
+                setResizeState({ startX: e.clientX, startHours: hoursCount }); 
+              }}
+            >
+              {!!resizeState && <div className="absolute -top-6 bg-stone-800 text-stone-100 text-xs px-2 py-1 rounded shadow-md whitespace-nowrap animate-in fade-in zoom-in duration-150 pointer-events-none">{hoursCount} 段</div>}
+              <div className={`w-4 h-10 border rounded-md transition-colors flex items-center justify-center shadow-sm pointer-events-none ${!!resizeState ? 'bg-stone-200 border-stone-500 scale-110' : 'bg-stone-100 border-stone-300 group-hover:border-stone-500 group-hover:bg-stone-200'}`}><div className="w-[2px] h-4 bg-stone-400 rounded-full" /></div>
             </div>
 
             <div className="absolute -translate-y-1/2 flex items-center z-40 interactive-element" style={{ top: `${BASE_Y}px`, left: `${totalWidth + 32}px` }}>
@@ -564,7 +589,7 @@ export default function App() {
 }
 
 // ============================
-// 子组件区域：极致全景无框 3D 画廊
+// 子组件区域
 // ============================
 
 function VisualGallery({ records, activeId, onSelect, onClose }) {
@@ -593,7 +618,8 @@ function VisualGallery({ records, activeId, onSelect, onClose }) {
 
   return (
     <div className="absolute inset-0 z-[100] bg-stone-900/90 backdrop-blur-xl flex flex-col animate-in fade-in zoom-in-95 duration-300 pointer-events-auto overflow-hidden">
-      {/* 彻底移除占据屏幕空间的标题栏，改为一个极简的悬浮关闭按钮 */}
+      
+      {/* 极简悬浮关闭按钮，100% 解放屏幕空间 */}
       <button onClick={onClose} className="absolute top-6 right-6 z-[110] p-3 text-stone-300 bg-stone-800/80 hover:bg-stone-700 hover:text-white rounded-full transition-all backdrop-blur-md shadow-lg border border-stone-600/50 interactive-element">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
