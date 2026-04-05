@@ -108,7 +108,7 @@ const PIXELS_PER_MINUTE = 0.85;
 const MINS_PER_HOUR = 60;
 const HOUR_WIDTH = MINS_PER_HOUR * PIXELS_PER_MINUTE; 
 const SNAP_MINS = 5; 
-const BASE_Y = 160; 
+const BASE_Y = 160; // 适配常规手机横屏高度 (约 320px 的中心点)
 
 const getSegmentColor = (index, total) => {
   const progress = index / Math.max(1, total - 1);
@@ -128,7 +128,6 @@ const formatMinsToTime = (mins) => {
 
 // --- 主应用组件 ---
 export default function App() {
-  // --- 自动注入样式库 & 原生级横屏锁定方案 ---
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
       const script = document.createElement('script');
@@ -149,29 +148,13 @@ export default function App() {
       const style = document.createElement('style');
       style.id = 'vite-reset';
       style.innerHTML = `
-        /* 基础重置 */
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #fafaf9; overflow: hidden; overscroll-behavior: none; }
-        
-        /* 【原生级横屏锁定魔法】
-           当设备处于竖屏 (portrait) 模式时：
-           1. 我们强制将 #root 的宽高颠倒（宽变成屏幕高，高变成屏幕宽）。
-           2. 以中心点为轴，强制旋转 90 度。
-           3. 这样，UI 本身始终是横向布局的，用户看到侧躺的画面就会本能地把手机横过来。
-        */
-        #root { 
-          position: absolute; 
-          top: 0; left: 0; 
-          width: 100vw; height: 100vh; 
-          overflow: hidden; 
-        }
+        #root { width: 100%; height: 100%; }
 
+        /* 回退到绝对稳定、不会破坏布局的横屏锁定遮罩方案 */
+        #portrait-lock { display: none; }
         @media screen and (orientation: portrait) {
-          #root {
-            width: 100vh !important; 
-            height: 100vw !important;
-            transform-origin: top left;
-            transform: rotate(90deg) translateY(-100%);
-          }
+          #portrait-lock { display: flex !important; }
         }
 
         @media (hover: none) and (pointer: coarse) {
@@ -197,7 +180,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false); 
   const [showGallery, setShowGallery] = useState(false); 
 
-  const [ambientMessage, setAmbientMessage] = useState("点击扎下标记，按住并拖动可以直接画出一段时光。");
+  const [ambientMessage, setAmbientMessage] = useState("新的一天，点击记录生活。");
   const [activeZId, setActiveZId] = useState(null);
 
   const saveTimerRef = useRef(null);
@@ -210,7 +193,7 @@ export default function App() {
       description: "只记录，不控制的时间线",
       start_url: ".",
       display: "standalone",
-      orientation: "landscape", // 安装后系统级别强制横屏
+      orientation: "landscape", // 桌面安装后依然强制横屏启动
       theme_color: "#fafaf9",
       background_color: "#fafaf9",
       icons: [
@@ -300,37 +283,25 @@ export default function App() {
 
   const handleDeleteHistory = async (id, e) => {
     e.stopPropagation(); e.preventDefault(); 
-    try { await dbHelper.delete(id); setConfirmDeleteId(null); if (activeRecordId === id) await handleBackToDraft(); else await loadHistoryList(); } catch (err) { }
+    try { await dbHelper.delete(id); setConfirmDeleteId(null); if (activeRecordId === id) await handleBackToDraft(); else await loadHistoryList(); setAmbientMessage("撕掉了一页过往。"); } catch (err) { }
   };
 
   const getRelativePos = (clientX, clientY) => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
-    
-    // 【旋转坐标系修复】: 因为 CSS 做了 90 度旋转，点击坐标需要反向映射
-    const isPortrait = window.innerHeight > window.innerWidth;
-    if (isPortrait) {
-      // 竖屏旋转后：屏幕的 Y 对应内容的 X，屏幕的 X 对应内容的 Y
-      const actualX = clientY - rect.top;
-      const actualY = (window.innerWidth - clientX) - rect.left;
-      return { x: actualX, y: actualY };
-    }
-    
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  const getMinsFromPointerX = (clientX, clientY) => {
+  const getMinsFromPointerX = (clientX) => {
     if (!containerRef.current) return 0;
     const rect = containerRef.current.getBoundingClientRect();
-    const isPortrait = window.innerHeight > window.innerWidth;
-    const x = isPortrait ? (clientY - rect.top) : (clientX - rect.left);
-    return Math.round((x / PIXELS_PER_MINUTE) / SNAP_MINS) * SNAP_MINS; 
+    return Math.round(((clientX - rect.left) / PIXELS_PER_MINUTE) / SNAP_MINS) * SNAP_MINS; 
   };
 
   const handleTrackPointerDown = (e) => {
     if (e.target.closest('.interactive-element')) return;
     e.target.setPointerCapture(e.pointerId);
-    const mins = getMinsFromPointerX(e.clientX, e.clientY);
+    const mins = getMinsFromPointerX(e.clientX);
     const constrainedMins = Math.max(0, Math.min(hoursCount * 60, mins));
     setTrackDragState({ startMins: constrainedMins, currentMins: constrainedMins });
     setActiveZId(null); 
@@ -349,7 +320,7 @@ export default function App() {
 
   const handlePointerMove = (e) => {
     const pos = getRelativePos(e.clientX, e.clientY);
-    const mins = getMinsFromPointerX(e.clientX, e.clientY);
+    const mins = getMinsFromPointerX(e.clientX);
 
     if (trackDragState) {
       setTrackDragState(prev => ({ ...prev, currentMins: Math.max(0, Math.min(hoursCount * 60, mins)) })); return;
@@ -371,18 +342,21 @@ export default function App() {
       const { startMins, currentMins } = trackDragState;
       if (Math.abs(currentMins - startMins) < 10) {
         const newId = Date.now().toString(); setPins([...pins, { id: newId, time: startMins, text: '', timeLabel: '', offset: { x: 0, y: -50 } }]); setActiveZId(newId);
+        setAmbientMessage("扎下了一个标记。"); // 重新加入提示语
       } else {
         const newId = Date.now().toString(); setRanges([...ranges, { id: newId, startTime: Math.min(startMins, currentMins), endTime: Math.max(startMins, currentMins), text: '', timeLabel: '', offset: { x: 0, y: -45 } }]); setActiveZId(newId);
+        setAmbientMessage("画出了一段时光。"); // 重新加入提示语
       }
       setTrackDragState(null); return;
     }
     if (draggingLabel) { setDraggingLabel(null); return; }
-    if (isResizing) { setIsResizing(false); }
+    if (isResizing) { setIsResizing(false); setAmbientMessage(`画板容量变为了 ${hoursCount} 个段落。`); }
     if (connectingPin) {
-      const dropMins = getMinsFromPointerX(e.clientX, e.clientY);
+      const dropMins = getMinsFromPointerX(e.clientX);
       const targetPin = pins.find(p => p.id !== connectingPin.id && Math.abs(p.time - dropMins) <= 15);
       if (targetPin) {
         const newId = Date.now().toString(); setRanges([...ranges, { id: newId, startTime: Math.min(connectingPin.time, targetPin.time), endTime: Math.max(connectingPin.time, targetPin.time), text: connectingPin.text || targetPin.text || '', timeLabel: '', offset: { x: 0, y: -45 } }]); setPins(pins.filter(p => p.id !== connectingPin.id && p.id !== targetPin.id)); setActiveZId(newId);
+        setAmbientMessage("连成了线，架起了一段时光。"); // 重新加入提示语
       } else { setAmbientMessage("需要拖拽到另一个标记的针头上，才能连起来。"); }
       setConnectingPin(null);
     }
@@ -392,8 +366,8 @@ export default function App() {
   const updatePinTimeLabel = (id, timeLabel) => setPins(pins.map(p => p.id === id ? { ...p, timeLabel } : p));
   const updateRangeText = (id, text) => setRanges(ranges.map(r => r.id === id ? { ...r, text } : r));
   const updateRangeTimeLabel = (id, timeLabel) => setRanges(ranges.map(r => r.id === id ? { ...r, timeLabel } : r));
-  const deletePin = (id) => { setPins(pins.filter(p => p.id !== id)); };
-  const deleteRange = (id) => { setRanges(ranges.filter(r => r.id !== id)); };
+  const deletePin = (id) => { setPins(pins.filter(p => p.id !== id)); setAmbientMessage("拔掉了一个标记。"); };
+  const deleteRange = (id) => { setRanges(ranges.filter(r => r.id !== id)); setAmbientMessage("抹去了一段经历。"); };
 
   const leveledRanges = useMemo(() => {
     const sorted = [...ranges].sort((a, b) => a.startTime - b.startTime); const tracks = [];
@@ -413,8 +387,18 @@ export default function App() {
       className="flex flex-col w-full h-full bg-stone-50 text-stone-800 font-sans selection:bg-stone-200 select-none overflow-hidden relative"
       onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} onPointerCancel={handlePointerUp}
     >
-      <header className="px-6 py-4 flex justify-between items-center opacity-70 shrink-0 z-40">
-        <div className="flex items-center gap-2">
+      {/* 恢复并优化：绝对安全的竖屏防越狱黑屏遮罩 */}
+      <div id="portrait-lock" className="absolute inset-0 z-[99999] bg-stone-900/95 backdrop-blur-md flex flex-col items-center justify-center text-stone-100">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-4 animate-bounce">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2" transform="rotate(90 12 12)"></rect>
+          <line x1="12" y1="18" x2="12.01" y2="18"></line>
+        </svg>
+        <h2 className="text-xl font-bold tracking-widest mb-2">请横置手机使用</h2>
+        <p className="text-stone-400 text-xs text-center px-8">本应用专为横向时间线布局打造<br/>系统方向锁定请在快捷中心关闭</p>
+      </div>
+
+      <header className="absolute top-0 left-0 w-full px-6 py-4 flex justify-between items-center opacity-70 z-40 bg-gradient-to-b from-stone-50 via-stone-50/80 to-transparent pointer-events-none">
+        <div className="flex items-center gap-2 pointer-events-auto">
           <button onClick={() => setShowHistory(true)} className="p-2 -ml-2 text-stone-400 hover:text-stone-700 hover:bg-stone-200 rounded-lg transition-colors interactive-element" title="文字列表">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
           </button>
@@ -434,7 +418,7 @@ export default function App() {
 
       {showGallery && <VisualGallery records={galleryRecords} activeId={activeRecordId} onSelect={(id, name) => id === 'draft' ? handleBackToDraft() : handleLoadHistory(id, name)} onClose={() => setShowGallery(false)} />}
       {showHistory && (
-        <div className="absolute inset-0 z-50 flex">
+        <div className="absolute inset-0 z-50 flex pointer-events-auto">
           <div className="w-64 bg-stone-100 shadow-2xl h-full flex flex-col animate-in slide-in-from-left duration-300 interactive-element">
              <div className="p-6 pb-2 border-b border-stone-200 flex justify-between items-center">
               <h2 className="text-sm font-medium text-stone-500 tracking-widest uppercase">记忆库</h2>
@@ -463,11 +447,13 @@ export default function App() {
         </div>
       )}
 
-      <main className={`flex-1 relative w-full overflow-hidden flex flex-col ${showGallery ? 'invisible' : 'visible'}`}>
-        <div className="w-full h-full overflow-x-auto overflow-y-hidden custom-scrollbar outline-none" ref={trackRef}>
-          <div className="relative h-[320px] mx-12 min-w-[800px]" ref={containerRef} style={{ width: `${totalWidth + 120}px` }}>
+      {/* 取消 flex 强行堆叠，改为绝对铺满，让 touch-pan 生效 */}
+      <main className={`absolute inset-0 w-full h-full overflow-hidden ${showGallery ? 'invisible' : 'visible'}`}>
+        <div className="w-full h-full overflow-x-auto overflow-y-hidden custom-scrollbar outline-none touch-pan-x" ref={trackRef}>
+          <div className="relative h-[320px] mx-12 min-w-[800px] mt-[10vh]" ref={containerRef} style={{ width: `${totalWidth + 120}px` }}>
             
-            <div className="absolute left-0 w-full z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '40px', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
+            {/* 极限缩小的防冲突画线区域 (高度缩小到 24px) */}
+            <div className="absolute left-0 w-full z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '24px', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
 
             {trackDragState && (
               <div className="absolute z-50 pointer-events-none flex flex-col items-center transition-none" style={{ left: `${trackDragState.currentMins * PIXELS_PER_MINUTE}px`, top: `${BASE_Y - 80}px`, bottom: '0', width: '2px' }}>
@@ -530,7 +516,8 @@ export default function App() {
                     <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0, zIndex: -1 }}><line x1={0} y1={0} x2={offset.x} y2={offset.y} stroke="#a8a29e" strokeDasharray="4 3" strokeWidth="1.5" strokeLinecap="round" /></svg>
                     <div className="absolute flex flex-col items-center group/label z-10 touch-none" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
                       <div className="flex flex-col items-center">
-                        <div className="w-12 h-3 bg-stone-200/90 border border-stone-300/60 border-b-0 rounded-t-md cursor-move flex justify-center items-center touch-none backdrop-blur-sm shadow-sm" onPointerDown={(e) => handleLabelPointerDown(range, 'range', e)}><div className="w-4 h-0.5 bg-stone-400 rounded-full" /></div>
+                        {/* 优化手柄：巨大触摸区域，小巧视觉外观 */}
+                        <div className="w-full min-w-[60px] h-6 bg-stone-200/80 hover:bg-stone-300/80 border border-b-0 border-stone-300/50 rounded-t-md cursor-move flex justify-center items-center touch-none backdrop-blur-sm shadow-sm transition-colors" onPointerDown={(e) => handleLabelPointerDown(range, 'range', e)}><div className="w-6 h-1 bg-stone-400/80 rounded-full pointer-events-none" /></div>
                         <div className="relative flex justify-center items-center">
                           <EventInput text={range.text} onChange={(t) => updateRangeText(range.id, t)} placeholder="记录时光" />
                           <button onPointerDown={(e) => { e.stopPropagation(); deleteRange(range.id); }} className="absolute -right-7 top-1/2 -translate-y-1/2 text-stone-300 hover:text-red-400 opacity-0 group-hover/label:opacity-100 transition-opacity p-1 interactive-element"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
@@ -550,7 +537,8 @@ export default function App() {
                   <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0, zIndex: -1 }}><line x1={0} y1={-16} x2={offset.x} y2={offset.y} stroke="#a8a29e" strokeDasharray="4 3" strokeWidth="1.5" strokeLinecap="round" /></svg>
                   <div className="absolute flex flex-col items-center group/label z-10 touch-none" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
                     <div className="flex flex-col items-center">
-                      <div className="w-12 h-3 bg-stone-200/90 border border-stone-300/60 border-b-0 rounded-t-md cursor-move flex justify-center items-center touch-none backdrop-blur-sm shadow-sm" onPointerDown={(e) => handleLabelPointerDown(pin, 'pin', e)}><div className="w-4 h-0.5 bg-stone-400 rounded-full" /></div>
+                       {/* 优化手柄：巨大触摸区域，小巧视觉外观 */}
+                      <div className="w-full min-w-[60px] h-6 bg-stone-200/80 hover:bg-stone-300/80 border border-b-0 border-stone-300/50 rounded-t-md cursor-move flex justify-center items-center touch-none backdrop-blur-sm shadow-sm transition-colors" onPointerDown={(e) => handleLabelPointerDown(pin, 'pin', e)}><div className="w-6 h-1 bg-stone-400/80 rounded-full pointer-events-none" /></div>
                       <div className="relative flex justify-center items-center">
                         <EventInput text={pin.text} onChange={(t) => updatePinText(pin.id, t)} placeholder="写点什么" />
                         <button onPointerDown={(e) => { e.stopPropagation(); deletePin(pin.id); }} className="absolute -right-7 top-1/2 -translate-y-1/2 text-stone-300 hover:text-red-500 opacity-0 group-hover/label:opacity-100 transition-opacity p-1 interactive-element"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
@@ -567,8 +555,9 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="px-8 pb-4 pt-2 flex justify-center items-center pointer-events-none shrink-0 z-40 bg-gradient-to-t from-stone-50 to-transparent">
-        <p className="text-stone-400 italic text-xs transition-all duration-700 ease-in-out">{ambientMessage}</p>
+      {/* 底部提示词幽灵化，不再阻挡画布滑动 */}
+      <footer className="absolute bottom-0 left-0 w-full px-8 pb-6 pt-12 flex justify-center items-end pointer-events-none z-40 bg-gradient-to-t from-stone-50 via-stone-50/70 to-transparent">
+        <p className="text-stone-500/80 italic text-xs transition-all duration-700 ease-in-out">{ambientMessage}</p>
       </footer>
 
       <style dangerouslySetInnerHTML={{__html: ` .custom-scrollbar::-webkit-scrollbar { height: 0px; background: transparent; } .interactive-element { cursor: default; } `}} />
@@ -651,12 +640,11 @@ function MiniTimeline({ record }) {
   );
 }
 
-// 【UI 优化 5】: 带有明显缩放指示器的 EventInput
 function EventInput({ text, onChange, placeholder }) {
   const [val, setVal] = useState(text);
   const handleBlur = () => { onChange(val); };
   return (
-    <div className="relative inline-block group/input rounded-b-md shadow-sm border border-stone-200/60 overflow-hidden bg-stone-100/90 backdrop-blur-md">
+    <div className="relative inline-block group/input rounded-b-md shadow-sm border border-stone-200/60 overflow-hidden bg-stone-100/90 backdrop-blur-md border-t-0">
       <textarea
         className="resize min-w-[80px] min-h-[40px] max-w-[300px] max-h-[200px] bg-transparent outline-none text-sm text-stone-700 placeholder-stone-400 text-center p-2 pb-3 leading-tight block interactive-element"
         placeholder={placeholder}
@@ -665,7 +653,6 @@ function EventInput({ text, onChange, placeholder }) {
         onBlur={handleBlur}
         onPointerDown={(e) => e.stopPropagation()} 
       />
-      {/* 强化的拉伸指示器图标 */}
       <div className="absolute bottom-0 right-0 w-4 h-4 pointer-events-none flex justify-end items-end p-0.5 opacity-40 group-focus-within/input:opacity-80 transition-opacity">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d="M11 5 L11 11 L5 11" />
