@@ -132,18 +132,13 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
-    
-    // 【修复 1】：监听 Tailwind CSS 引擎，确保布局渲染完美后再展现 UI
     if (document.getElementById('tailwind-cdn')) {
       setTimeout(() => { if(isMounted) setTailwindLoaded(true); }, 150);
     } else {
       const script = document.createElement('script');
       script.id = 'tailwind-cdn';
       script.src = 'https://cdn.tailwindcss.com';
-      script.onload = () => {
-        // 延迟 300ms 给浏览器重绘的时间，避免先白屏再闪烁
-        setTimeout(() => { if(isMounted) setTailwindLoaded(true); }, 300);
-      };
+      script.onload = () => { setTimeout(() => { if(isMounted) setTailwindLoaded(true); }, 300); };
       document.head.appendChild(script);
     }
     
@@ -161,14 +156,9 @@ export default function App() {
       style.innerHTML = `
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #fafaf9; overflow: hidden; overscroll-behavior: none; }
         #root { width: 100%; height: 100%; }
-
         #portrait-lock { display: none; }
-        @media screen and (orientation: portrait) {
-          #portrait-lock { display: flex !important; }
-        }
-        @media (hover: none) and (pointer: coarse) {
-          .mobile-no-cursor { cursor: default !important; }
-        }
+        @media screen and (orientation: portrait) { #portrait-lock { display: flex !important; } }
+        @media (hover: none) and (pointer: coarse) { .mobile-no-cursor { cursor: default !important; } }
         textarea::-webkit-resizer { display: none; }
       `;
       document.head.appendChild(style);
@@ -242,7 +232,7 @@ export default function App() {
   const loadHistoryList = async () => { try { const all = await dbHelper.getAllByOrder(); setHistoryList(all.filter(a => a.id !== 'draft')); } catch (e) {} };
 
   useEffect(() => {
-    if (!isLoaded || !tailwindLoaded) return; // 确保完全加载再自动保存
+    if (!isLoaded || !tailwindLoaded) return; 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
@@ -350,7 +340,7 @@ export default function App() {
       setTrackDragState(null); return;
     }
     if (draggingLabel) { setDraggingLabel(null); return; }
-    if (isResizing) { setIsResizing(false); setAmbientMessage(`画板容量变为了 ${hoursCount} 个段落。`); }
+    if (isResizing) { setIsResizing(false); setAmbientMessage(`时间线总长度变为了 ${hoursCount} 个段落。`); }
     if (connectingPin) {
       const dropMins = getMinsFromPointerX(e.clientX);
       const targetPin = pins.find(p => p.id !== connectingPin.id && Math.abs(p.time - dropMins) <= 15);
@@ -382,7 +372,6 @@ export default function App() {
   const totalWidth = hoursCount * HOUR_WIDTH; const renderHours = Math.ceil(hoursCount); 
   const galleryRecords = useMemo(() => [{ id: 'draft', name: '当前草稿', pins, ranges, hoursCount }, ...historyList], [pins, ranges, hoursCount, historyList]);
 
-  // 【修复】：强制等待 CSS 渲染的优雅 Loading 屏
   if (!tailwindLoaded || !isLoaded) {
     return (
       <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafaf9', color: '#d6d3d1', fontFamily: 'sans-serif', letterSpacing: '4px', fontSize: '14px' }}>
@@ -406,7 +395,7 @@ export default function App() {
           <line x1="12" y1="18" x2="12.01" y2="18"></line>
         </svg>
         <h2 className="text-xl font-bold tracking-widest mb-2">请横置手机使用</h2>
-        <p className="text-stone-400 text-xs text-center px-8 leading-relaxed">本应用专为横向时间线布局打造<br/>若系统已锁定方向，请在控制中心临时关闭</p>
+        <p className="text-stone-400 text-xs text-center px-8 leading-relaxed">本应用专为横向时间线布局打造<br/>请横置手机使用</p>
       </div>
 
       <header className="absolute top-0 left-0 w-full px-6 py-4 flex justify-between items-center opacity-70 z-40 bg-gradient-to-b from-stone-50 via-stone-50/80 to-transparent pointer-events-none">
@@ -463,8 +452,7 @@ export default function App() {
         <div className="w-full h-full overflow-x-auto overflow-y-hidden custom-scrollbar outline-none touch-pan-x" ref={trackRef}>
           <div className="relative h-[320px] mx-12 min-w-[800px] mt-[10vh]" ref={containerRef} style={{ width: `${totalWidth + 120}px` }}>
             
-            {/* 【重构修复】：高度上下收窄防误触(32px)，但宽度向左右屏幕外无限伸展(200vw)，且彻底阻断滚动 */}
-            <div className="absolute z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '32px', width: '200vw', left: '-50vw', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
+            <div className="absolute left-0 w-full z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '32px', width: '200vw', left: '-50vw', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
 
             {trackDragState && (
               <div className="absolute z-50 pointer-events-none flex flex-col items-center transition-none" style={{ left: `${trackDragState.currentMins * PIXELS_PER_MINUTE}px`, top: `${BASE_Y - 80}px`, bottom: '0', width: '2px' }}>
@@ -505,9 +493,11 @@ export default function App() {
               })}
             </svg>
 
-            <div className="absolute -translate-y-1/2 flex items-center justify-center cursor-ew-resize group z-30 interactive-element" style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px` }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); setIsResizing(true); }}>
-              {isResizing && <div className="absolute -top-8 bg-stone-800 text-stone-100 text-xs px-2 py-1 rounded shadow-md whitespace-nowrap animate-in fade-in zoom-in duration-150 pointer-events-none">{hoursCount} 段</div>}
-              <div className={`w-3 h-6 border rounded-sm transition-colors flex items-center justify-center ${isResizing ? 'bg-stone-200 border-stone-500 scale-110' : 'bg-stone-100 border-stone-300 group-hover:border-stone-500 group-hover:bg-stone-200'}`}><div className="w-[2px] h-2 bg-stone-400 rounded-full" /></div>
+            {/* 【极致优化】：横跨半个屏幕高的巨型隐形拖拽力场，绝对锁死防滚屏 */}
+            <div className="absolute -translate-y-1/2 flex items-center justify-center cursor-ew-resize group z-50 interactive-element touch-none" style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px`, width: '80px', height: '120px', transform: 'translate(-50%, -50%)' }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.target.setPointerCapture(e.pointerId); setIsResizing(true); }}>
+              {isResizing && <div className="absolute -top-6 bg-stone-800 text-stone-100 text-xs px-2 py-1 rounded shadow-md whitespace-nowrap animate-in fade-in zoom-in duration-150 pointer-events-none">{hoursCount} 段</div>}
+              {/* 可见的手柄外观 */}
+              <div className={`w-4 h-10 border rounded-md transition-colors flex items-center justify-center shadow-sm pointer-events-none ${isResizing ? 'bg-stone-200 border-stone-500 scale-110' : 'bg-stone-100 border-stone-300 group-hover:border-stone-500 group-hover:bg-stone-200'}`}><div className="w-[2px] h-4 bg-stone-400 rounded-full" /></div>
             </div>
 
             <div className="absolute -translate-y-1/2 flex items-center z-40 interactive-element" style={{ top: `${BASE_Y}px`, left: `${totalWidth + 32}px` }}>
@@ -574,7 +564,7 @@ export default function App() {
 }
 
 // ============================
-// 子组件区域：无框悬浮 3D 滚轴画廊
+// 子组件区域：极致全景无框 3D 画廊
 // ============================
 
 function VisualGallery({ records, activeId, onSelect, onClose }) {
@@ -587,10 +577,9 @@ function VisualGallery({ records, activeId, onSelect, onClose }) {
         if (!el) return; 
         const itemCenter = el.offsetTop + el.clientHeight / 2; 
         const distance = Math.abs(containerCenter - itemCenter); 
-        // 极度强化的 3D 滚轴衰减系数，让时间线层层叠放
         const maxDist = containerRef.current.clientHeight / 1.5; 
         const ratio = Math.max(0, 1 - distance / maxDist);
-        const easeRatio = Math.pow(ratio, 2); // 指数衰减增加远近落差感
+        const easeRatio = Math.pow(ratio, 2); 
         
         el.style.transform = `scale(${0.5 + 0.5 * easeRatio}) translateY(${distance * 0.1}px) rotateX(${distance * 0.05}deg)`; 
         el.style.opacity = 0.1 + 0.9 * easeRatio; 
@@ -603,24 +592,20 @@ function VisualGallery({ records, activeId, onSelect, onClose }) {
   }, [records, activeId]);
 
   return (
-    <div className="absolute inset-0 z-50 bg-stone-900/90 backdrop-blur-xl flex flex-col animate-in fade-in zoom-in-95 duration-300 pointer-events-auto overflow-hidden">
-      <header className="p-6 flex justify-between items-center z-50 shrink-0 border-b border-stone-700/50 bg-stone-900/50">
-        <h2 className="text-sm font-medium tracking-widest text-stone-400 uppercase">视觉画廊</h2>
-        <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-200 bg-stone-800 hover:bg-stone-700 rounded-full transition-colors"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-      </header>
-      {/* 视角加入透视点 (perspective)，开启真 3D */}
-      <div ref={containerRef} className={`flex-1 overflow-y-auto no-scrollbar touch-pan-y relative`} style={{ perspective: '1000px' }} onPointerDown={(e) => { setIsDragging(true); setStartY(e.clientY); setScrollTop(containerRef.current.scrollTop); }} onPointerMove={(e) => { if (isDragging) containerRef.current.scrollTop = scrollTop - (e.clientY - startY); }} onPointerUp={() => setIsDragging(false)} onPointerLeave={() => setIsDragging(false)}>
-        <div className="h-[40vh]" />
+    <div className="absolute inset-0 z-[100] bg-stone-900/90 backdrop-blur-xl flex flex-col animate-in fade-in zoom-in-95 duration-300 pointer-events-auto overflow-hidden">
+      {/* 彻底移除占据屏幕空间的标题栏，改为一个极简的悬浮关闭按钮 */}
+      <button onClick={onClose} className="absolute top-6 right-6 z-[110] p-3 text-stone-300 bg-stone-800/80 hover:bg-stone-700 hover:text-white rounded-full transition-all backdrop-blur-md shadow-lg border border-stone-600/50 interactive-element">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+
+      <div ref={containerRef} className={`flex-1 w-full h-full overflow-y-auto no-scrollbar touch-pan-y relative`} style={{ perspective: '1000px' }} onPointerDown={(e) => { setIsDragging(true); setStartY(e.clientY); setScrollTop(containerRef.current.scrollTop); }} onPointerMove={(e) => { if (isDragging) containerRef.current.scrollTop = scrollTop - (e.clientY - startY); }} onPointerUp={() => setIsDragging(false)} onPointerLeave={() => setIsDragging(false)}>
+        <div className="h-[30vh]" />
         {records.map((record, index) => (
-          // 【彻底移除边框和背景，加入负边距紧凑堆叠】
-          <div key={record.id} ref={el => itemsRef.current[index] = el} className="snap-center shrink-0 w-full flex flex-col items-center justify-center -my-16 transition-transform duration-75 origin-center relative cursor-pointer group" style={{ transform: 'scale(0.5)', opacity: 0.2 }} onClick={() => onSelect(record.id, record.name)}>
-            
+          <div key={record.id} ref={el => itemsRef.current[index] = el} className="snap-center shrink-0 w-full flex flex-col items-center justify-center -my-20 transition-transform duration-75 origin-center relative cursor-pointer group" style={{ transform: 'scale(0.5)', opacity: 0.2 }} onClick={() => onSelect(record.id, record.name)}>
             <div className="w-full max-w-4xl relative z-10 flex justify-between items-end mb-4 px-12 opacity-60 group-hover:opacity-100 transition-opacity drop-shadow-md">
               <h3 className="text-2xl font-bold tracking-wider text-stone-100">{record.name}</h3>
               <span className="text-sm text-stone-400 font-mono bg-stone-800/80 px-2 py-1 rounded-md">{record.pins?.length || 0} 标记 · {record.ranges?.length || 0} 段落</span>
             </div>
-            
-            {/* 纯透明容器渲染时间线，移除 overflow-hidden 让元素破框而出 */}
             <div className="w-full max-w-5xl pointer-events-none relative">
                <MiniTimeline record={record} />
             </div>
