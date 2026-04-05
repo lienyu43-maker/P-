@@ -514,7 +514,7 @@ export default function App() {
             {/* 【核心修复】：为段落手柄加入超大的、防滚屏强制锁定的隐形热区 */}
             <div 
               className="absolute -translate-y-1/2 flex items-center justify-center cursor-ew-resize group z-50 interactive-element touch-none" 
-              style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px`, width: '80px', height: '120px', transform: 'translate(-50%, -50%)' }} 
+              style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px`, width: '42px', height: '54px', transform: 'translate(-50%, -50%)' }} 
               onPointerDown={(e) => { 
                 e.stopPropagation(); e.preventDefault(); 
                 e.target.setPointerCapture(e.pointerId); 
