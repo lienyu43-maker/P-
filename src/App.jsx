@@ -108,7 +108,7 @@ const PIXELS_PER_MINUTE = 0.85;
 const MINS_PER_HOUR = 60;
 const HOUR_WIDTH = MINS_PER_HOUR * PIXELS_PER_MINUTE; 
 const SNAP_MINS = 5; 
-const BASE_Y = 160; // 适配常规手机横屏高度 (约 320px 的中心点)
+const BASE_Y = 160; 
 
 const getSegmentColor = (index, total) => {
   const progress = index / Math.max(1, total - 1);
@@ -128,11 +128,16 @@ const formatMinsToTime = (mins) => {
 
 // --- 主应用组件 ---
 export default function App() {
+  const [tailwindLoaded, setTailwindLoaded] = useState(false);
+
   useEffect(() => {
-    if (!document.getElementById('tailwind-cdn')) {
+    if (document.getElementById('tailwind-cdn')) {
+      setTailwindLoaded(true);
+    } else {
       const script = document.createElement('script');
       script.id = 'tailwind-cdn';
       script.src = 'https://cdn.tailwindcss.com';
+      script.onload = () => setTailwindLoaded(true); // 确保 CSS 加载完再渲染 UI
       document.head.appendChild(script);
     }
     
@@ -151,17 +156,13 @@ export default function App() {
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #fafaf9; overflow: hidden; overscroll-behavior: none; }
         #root { width: 100%; height: 100%; }
 
-        /* 回退到绝对稳定、不会破坏布局的横屏锁定遮罩方案 */
         #portrait-lock { display: none; }
         @media screen and (orientation: portrait) {
           #portrait-lock { display: flex !important; }
         }
-
         @media (hover: none) and (pointer: coarse) {
           .mobile-no-cursor { cursor: default !important; }
         }
-
-        /* 隐藏浏览器原生 TextArea 拉伸块，用我们的高亮 SVG 代替 */
         textarea::-webkit-resizer { display: none; }
       `;
       document.head.appendChild(style);
@@ -180,7 +181,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false); 
   const [showGallery, setShowGallery] = useState(false); 
 
-  const [ambientMessage, setAmbientMessage] = useState("新的一天，点击记录生活。");
+  const [ambientMessage, setAmbientMessage] = useState("新的一天，按住画出你的时间线。");
   const [activeZId, setActiveZId] = useState(null);
 
   const saveTimerRef = useRef(null);
@@ -193,7 +194,7 @@ export default function App() {
       description: "只记录，不控制的时间线",
       start_url: ".",
       display: "standalone",
-      orientation: "landscape", // 桌面安装后依然强制横屏启动
+      orientation: "landscape",
       theme_color: "#fafaf9",
       background_color: "#fafaf9",
       icons: [
@@ -242,7 +243,7 @@ export default function App() {
   const loadHistoryList = async () => { try { const all = await dbHelper.getAllByOrder(); setHistoryList(all.filter(a => a.id !== 'draft')); } catch (e) {} };
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !tailwindLoaded) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
@@ -255,7 +256,7 @@ export default function App() {
       } catch (e) {}
     }, 1500); 
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [pins, ranges, hoursCount, activeRecordId, activeRecordName, isLoaded, historyList]);
+  }, [pins, ranges, hoursCount, activeRecordId, activeRecordName, isLoaded, historyList, tailwindLoaded]);
 
   const trackRef = useRef(null); const containerRef = useRef(null); 
   const [isResizing, setIsResizing] = useState(false); const [connectingPin, setConnectingPin] = useState(null);
@@ -342,10 +343,10 @@ export default function App() {
       const { startMins, currentMins } = trackDragState;
       if (Math.abs(currentMins - startMins) < 10) {
         const newId = Date.now().toString(); setPins([...pins, { id: newId, time: startMins, text: '', timeLabel: '', offset: { x: 0, y: -50 } }]); setActiveZId(newId);
-        setAmbientMessage("扎下了一个标记。"); // 重新加入提示语
+        setAmbientMessage("扎下了一个标记。");
       } else {
         const newId = Date.now().toString(); setRanges([...ranges, { id: newId, startTime: Math.min(startMins, currentMins), endTime: Math.max(startMins, currentMins), text: '', timeLabel: '', offset: { x: 0, y: -45 } }]); setActiveZId(newId);
-        setAmbientMessage("画出了一段时光。"); // 重新加入提示语
+        setAmbientMessage("画出了一段时光。");
       }
       setTrackDragState(null); return;
     }
@@ -356,7 +357,7 @@ export default function App() {
       const targetPin = pins.find(p => p.id !== connectingPin.id && Math.abs(p.time - dropMins) <= 15);
       if (targetPin) {
         const newId = Date.now().toString(); setRanges([...ranges, { id: newId, startTime: Math.min(connectingPin.time, targetPin.time), endTime: Math.max(connectingPin.time, targetPin.time), text: connectingPin.text || targetPin.text || '', timeLabel: '', offset: { x: 0, y: -45 } }]); setPins(pins.filter(p => p.id !== connectingPin.id && p.id !== targetPin.id)); setActiveZId(newId);
-        setAmbientMessage("连成了线，架起了一段时光。"); // 重新加入提示语
+        setAmbientMessage("连成了线，架起了一段时光。");
       } else { setAmbientMessage("需要拖拽到另一个标记的针头上，才能连起来。"); }
       setConnectingPin(null);
     }
@@ -382,12 +383,20 @@ export default function App() {
   const totalWidth = hoursCount * HOUR_WIDTH; const renderHours = Math.ceil(hoursCount); 
   const galleryRecords = useMemo(() => [{ id: 'draft', name: '当前草稿', pins, ranges, hoursCount }, ...historyList], [pins, ranges, hoursCount, historyList]);
 
+  // Loading UI 解决白屏和无样式问题
+  if (!tailwindLoaded || !isLoaded) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafaf9', color: '#a8a29e', fontFamily: 'sans-serif' }}>
+        正在唤醒记忆...
+      </div>
+    );
+  }
+
   return (
     <div 
       className="flex flex-col w-full h-full bg-stone-50 text-stone-800 font-sans selection:bg-stone-200 select-none overflow-hidden relative"
       onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} onPointerCancel={handlePointerUp}
     >
-      {/* 恢复并优化：绝对安全的竖屏防越狱黑屏遮罩 */}
       <div id="portrait-lock" className="absolute inset-0 z-[99999] bg-stone-900/95 backdrop-blur-md flex flex-col items-center justify-center text-stone-100">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-4 animate-bounce">
           <rect x="5" y="2" width="14" height="20" rx="2" ry="2" transform="rotate(90 12 12)"></rect>
@@ -447,13 +456,12 @@ export default function App() {
         </div>
       )}
 
-      {/* 取消 flex 强行堆叠，改为绝对铺满，让 touch-pan 生效 */}
       <main className={`absolute inset-0 w-full h-full overflow-hidden ${showGallery ? 'invisible' : 'visible'}`}>
         <div className="w-full h-full overflow-x-auto overflow-y-hidden custom-scrollbar outline-none touch-pan-x" ref={trackRef}>
           <div className="relative h-[320px] mx-12 min-w-[800px] mt-[10vh]" ref={containerRef} style={{ width: `${totalWidth + 120}px` }}>
             
-            {/* 极限缩小的防冲突画线区域 (高度缩小到 24px) */}
-            <div className="absolute left-0 w-full z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '24px', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
+            {/* 修复：扩大上下 60px 的触控捕获区，绝对防滚动打断画线！ */}
+            <div className="absolute left-0 w-full z-0 mobile-no-cursor touch-none" style={{ top: `${BASE_Y}px`, height: '120px', transform: 'translateY(-50%)', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
 
             {trackDragState && (
               <div className="absolute z-50 pointer-events-none flex flex-col items-center transition-none" style={{ left: `${trackDragState.currentMins * PIXELS_PER_MINUTE}px`, top: `${BASE_Y - 80}px`, bottom: '0', width: '2px' }}>
@@ -516,7 +524,6 @@ export default function App() {
                     <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0, zIndex: -1 }}><line x1={0} y1={0} x2={offset.x} y2={offset.y} stroke="#a8a29e" strokeDasharray="4 3" strokeWidth="1.5" strokeLinecap="round" /></svg>
                     <div className="absolute flex flex-col items-center group/label z-10 touch-none" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
                       <div className="flex flex-col items-center">
-                        {/* 优化手柄：巨大触摸区域，小巧视觉外观 */}
                         <div className="w-full min-w-[60px] h-6 bg-stone-200/80 hover:bg-stone-300/80 border border-b-0 border-stone-300/50 rounded-t-md cursor-move flex justify-center items-center touch-none backdrop-blur-sm shadow-sm transition-colors" onPointerDown={(e) => handleLabelPointerDown(range, 'range', e)}><div className="w-6 h-1 bg-stone-400/80 rounded-full pointer-events-none" /></div>
                         <div className="relative flex justify-center items-center">
                           <EventInput text={range.text} onChange={(t) => updateRangeText(range.id, t)} placeholder="记录时光" />
@@ -537,7 +544,6 @@ export default function App() {
                   <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0, zIndex: -1 }}><line x1={0} y1={-16} x2={offset.x} y2={offset.y} stroke="#a8a29e" strokeDasharray="4 3" strokeWidth="1.5" strokeLinecap="round" /></svg>
                   <div className="absolute flex flex-col items-center group/label z-10 touch-none" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
                     <div className="flex flex-col items-center">
-                       {/* 优化手柄：巨大触摸区域，小巧视觉外观 */}
                       <div className="w-full min-w-[60px] h-6 bg-stone-200/80 hover:bg-stone-300/80 border border-b-0 border-stone-300/50 rounded-t-md cursor-move flex justify-center items-center touch-none backdrop-blur-sm shadow-sm transition-colors" onPointerDown={(e) => handleLabelPointerDown(pin, 'pin', e)}><div className="w-6 h-1 bg-stone-400/80 rounded-full pointer-events-none" /></div>
                       <div className="relative flex justify-center items-center">
                         <EventInput text={pin.text} onChange={(t) => updatePinText(pin.id, t)} placeholder="写点什么" />
@@ -555,7 +561,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* 底部提示词幽灵化，不再阻挡画布滑动 */}
       <footer className="absolute bottom-0 left-0 w-full px-8 pb-6 pt-12 flex justify-center items-end pointer-events-none z-40 bg-gradient-to-t from-stone-50 via-stone-50/70 to-transparent">
         <p className="text-stone-500/80 italic text-xs transition-all duration-700 ease-in-out">{ambientMessage}</p>
       </footer>
@@ -566,17 +571,26 @@ export default function App() {
 }
 
 // ============================
-// 子组件区域
+// 子组件区域：带 3D 滚轴特效的画廊
 // ============================
 
 function VisualGallery({ records, activeId, onSelect, onClose }) {
   const containerRef = useRef(null); const itemsRef = useRef([]); const [isDragging, setIsDragging] = useState(false); const [startY, setStartY] = useState(0); const [scrollTop, setScrollTop] = useState(0);
+  
   useEffect(() => {
     const handleScroll = () => {
       if (!containerRef.current) return; const containerCenter = containerRef.current.scrollTop + containerRef.current.clientHeight / 2;
       itemsRef.current.forEach((el) => {
-        if (!el) return; const itemCenter = el.offsetTop + el.clientHeight / 2; const distance = Math.abs(containerCenter - itemCenter); const maxDist = containerRef.current.clientHeight / 1.5; const ratio = Math.max(0, 1 - distance / maxDist);
-        el.style.transform = `scale(${0.85 + 0.15 * ratio})`; el.style.opacity = 0.3 + 0.7 * ratio; 
+        if (!el) return; 
+        const itemCenter = el.offsetTop + el.clientHeight / 2; 
+        const distance = Math.abs(containerCenter - itemCenter); 
+        // 收紧判定范围，实现急剧的 3D 滚轴衰减
+        const maxDist = containerRef.current.clientHeight / 2; 
+        const ratio = Math.max(0, 1 - distance / maxDist);
+        const easeRatio = Math.pow(ratio, 1.5); 
+        
+        el.style.transform = `scale(${0.5 + 0.5 * easeRatio})`; 
+        el.style.opacity = 0.2 + 0.8 * easeRatio; 
       });
     };
     const container = containerRef.current;
@@ -585,15 +599,19 @@ function VisualGallery({ records, activeId, onSelect, onClose }) {
   }, [records, activeId]);
 
   return (
-    <div className="absolute inset-0 z-50 bg-stone-50 flex flex-col animate-in fade-in zoom-in-95 duration-300">
+    <div className="absolute inset-0 z-50 bg-stone-50 flex flex-col animate-in fade-in zoom-in-95 duration-300 pointer-events-auto">
       <header className="p-6 flex justify-between items-center bg-stone-50/80 backdrop-blur z-10 shrink-0"><h2 className="text-sm font-medium tracking-widest text-stone-500 uppercase">视觉画廊</h2><button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-700 bg-stone-200/50 hover:bg-stone-200 rounded-full transition-colors"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header>
       <div ref={containerRef} className={`flex-1 overflow-y-auto no-scrollbar touch-pan-y ${isDragging ? '' : 'snap-y snap-mandatory'}`} onPointerDown={(e) => { setIsDragging(true); setStartY(e.clientY); setScrollTop(containerRef.current.scrollTop); }} onPointerMove={(e) => { if (isDragging) containerRef.current.scrollTop = scrollTop - (e.clientY - startY); }} onPointerUp={() => setIsDragging(false)} onPointerLeave={() => setIsDragging(false)}>
-        <div className="h-[30vh]" />
+        <div className="h-[40vh]" />
         {records.map((record, index) => (
-          <div key={record.id} ref={el => itemsRef.current[index] = el} className="snap-center shrink-0 w-full flex items-center justify-center py-8 transition-transform duration-100 origin-center" style={{ transform: 'scale(0.85)', opacity: 0.3 }}>
-            <div onClick={() => onSelect(record.id, record.name)} className={`w-full max-w-5xl p-6 cursor-pointer group transition-all duration-300 rounded-3xl ${activeId === record.id ? 'bg-stone-200/40' : 'hover:bg-stone-200/30'}`}>
-              <div className="flex justify-between items-end mb-4 px-6 opacity-40 group-hover:opacity-100 transition-opacity"><h3 className="text-xl font-medium tracking-wider text-stone-600">{record.name}</h3><span className="text-xs text-stone-400 font-mono">{record.pins?.length || 0} Pins · {record.ranges?.length || 0} Ranges</span></div>
-              <MiniTimeline record={record} />
+          // 加入 -my-8 负边距，像密码锁一样紧凑叠放
+          <div key={record.id} ref={el => itemsRef.current[index] = el} className="snap-center shrink-0 w-full flex items-center justify-center -my-8 transition-transform duration-75 origin-center" style={{ transform: 'scale(0.5)', opacity: 0.2 }}>
+            <div onClick={() => onSelect(record.id, record.name)} className={`w-full max-w-4xl p-4 cursor-pointer group transition-all duration-300 rounded-3xl ${activeId === record.id ? 'bg-stone-200/60' : 'hover:bg-stone-200/40'}`}>
+              <div className="flex justify-between items-end mb-2 px-6 opacity-40 group-hover:opacity-100 transition-opacity"><h3 className="text-xl font-medium tracking-wider text-stone-600">{record.name}</h3><span className="text-xs text-stone-400 font-mono">{record.pins?.length || 0} Pins · {record.ranges?.length || 0} Ranges</span></div>
+              {/* 限制内部高度，让滚轴效果更密集 */}
+              <div className="h-[200px] overflow-hidden rounded-xl pointer-events-none relative">
+                 <MiniTimeline record={record} />
+              </div>
             </div>
           </div>
         ))}
@@ -607,11 +625,11 @@ function MiniTimeline({ record }) {
   const { pins = [], ranges = [], hoursCount = 16 } = record; const totalMins = Math.max(1, hoursCount * 60);
   const leveledRanges = useMemo(() => { const sorted = [...ranges].sort((a, b) => a.startTime - b.startTime); const tracks = []; return sorted.map(range => { let l = 0; while (tracks[l] !== undefined && tracks[l] > range.startTime - 15) l++; tracks[l] = range.endTime; return { ...range, level: l }; }); }, [ranges]);
   const timeLabelLevels = useMemo(() => { const items = [ ...pins.map(p => ({ id: p.id, type: 'pin', center: p.time })), ...ranges.map(r => ({ id: r.id, type: 'range', center: (r.startTime + r.endTime) / 2 })) ].sort((a, b) => a.center - b.center); const tracks = []; const levelsMap = {}; items.forEach(item => { let l = 0; while (tracks[l] !== undefined && tracks[l] > item.center - 45) l++; tracks[l] = item.center; levelsMap[item.id] = l; }); return levelsMap; }, [pins, ranges]);
-  const BASE_Y = 160; 
+  const BASE_Y = 100; // 缩小画廊内的基准高度以适应紧凑卡片
 
   return (
-    <div className="relative w-full h-[320px] pointer-events-none">
-      <div className="absolute top-[160px] -translate-y-1/2 w-full flex h-1 rounded-full overflow-hidden opacity-50">{Array.from({ length: Math.ceil(hoursCount) }).map((_, i) => (<div key={i} className="flex-1 h-full" style={{ backgroundColor: getSegmentColor(i, Math.max(16, Math.ceil(hoursCount))) }} />))}</div>
+    <div className="relative w-full h-[200px] pointer-events-none origin-top" style={{ transform: 'scale(0.8)' }}>
+      <div className="absolute top-[100px] -translate-y-1/2 w-full flex h-1 rounded-full overflow-hidden opacity-50">{Array.from({ length: Math.ceil(hoursCount) }).map((_, i) => (<div key={i} className="flex-1 h-full" style={{ backgroundColor: getSegmentColor(i, Math.max(16, Math.ceil(hoursCount))) }} />))}</div>
       {leveledRanges.map(range => {
         const leftPct = (range.startTime / totalMins) * 100; const widthPct = ((range.endTime - range.startTime) / totalMins) * 100; const topPos = BASE_Y - 16 - range.level * 40; const offset = range.offset || { x: 0, y: -45 }; const tLevel = timeLabelLevels[range.id] || 0; const relativeTimeTop = BASE_Y + 12 + (tLevel * 24) - topPos;
         return (
@@ -628,7 +646,7 @@ function MiniTimeline({ record }) {
       {pins.map(pin => {
         const leftPct = (pin.time / totalMins) * 100; const offset = pin.offset || { x: 0, y: -50 }; const tLevel = timeLabelLevels[pin.id] || 0;
         return (
-          <div key={pin.id} className="absolute top-[160px]" style={{ left: `${leftPct}%` }}>
+          <div key={pin.id} className="absolute top-[100px]" style={{ left: `${leftPct}%` }}>
             <svg className="absolute overflow-visible" style={{ left: 0, top: 0, zIndex: -1 }}><line x1={0} y1={-12} x2={offset.x} y2={offset.y} stroke="#a8a29e" strokeDasharray="3 3" strokeWidth="1" strokeLinecap="round" /></svg>
             {pin.text && (<div className="absolute flex flex-col items-center z-10" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}><div className="text-[11px] text-stone-700 bg-stone-100/90 backdrop-blur-sm px-2 py-1 rounded shadow-sm border border-stone-200/60 whitespace-nowrap max-w-[160px] truncate">{pin.text}</div></div>)}
             <div className="absolute w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm" style={{ left: 0, top: -12, transform: 'translate(-50%, -50%)' }} /><div className="absolute w-[1.5px] h-3 bg-stone-300" style={{ left: 0, top: 0, transform: 'translate(-50%, -100%)' }} />
