@@ -512,17 +512,36 @@ export default function App() {
             </svg>
 
             {/* 【核心修复】：为段落手柄加入超大的、防滚屏强制锁定的隐形热区 */}
+            {/* 【极致优化：空心力场】中间穿透可以 Pin，只有上下两端可以拖拽拉伸时间线 */}
             <div 
-              className="absolute -translate-y-1/2 flex items-center justify-center cursor-ew-resize group z-50 interactive-element touch-none" 
-              style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth) + 20}px`, width: '20px', height: '54px', transform: 'translate(-50%, -50%)' }} 
-              onPointerDown={(e) => { 
-                e.stopPropagation(); e.preventDefault(); 
-                e.target.setPointerCapture(e.pointerId); 
-                setResizeState({ startX: e.clientX, startHours: hoursCount }); 
-              }}
+              className="absolute -translate-y-1/2 flex items-center justify-center group z-50 pointer-events-none" 
+              style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px`, width: '44px', height: '64px', transform: 'translate(-50%, -50%)' }} 
             >
-              {!!resizeState && <div className="absolute -top-6 bg-stone-800 text-stone-100 text-xs px-2 py-1 rounded shadow-md whitespace-nowrap animate-in fade-in zoom-in duration-150 pointer-events-none">{hoursCount} 段</div>}
-              <div className={`w-4 h-10 border rounded-md transition-colors flex items-center justify-center shadow-sm pointer-events-none ${!!resizeState ? 'bg-stone-200 border-stone-500 scale-110' : 'bg-stone-100 border-stone-300 group-hover:border-stone-500 group-hover:bg-stone-200'}`}><div className="w-[2px] h-4 bg-stone-400 rounded-full" /></div>
+              {/* 上半部分力场 (实体制，拦截触摸并触发拉伸) */}
+              <div 
+                className="absolute top-0 left-0 w-full h-[16px] cursor-ew-resize touch-none pointer-events-auto"
+                onPointerDown={(e) => { 
+                  e.stopPropagation(); e.preventDefault(); 
+                  e.target.setPointerCapture(e.pointerId); 
+                  setResizeState({ startX: e.clientX, startHours: hoursCount }); 
+                }}
+              />
+              
+              {/* 下半部分力场 (实体制，拦截触摸并触发拉伸) */}
+              <div 
+                className="absolute bottom-0 left-0 w-full h-[16px] cursor-ew-resize touch-none pointer-events-auto"
+                onPointerDown={(e) => { 
+                  e.stopPropagation(); e.preventDefault(); 
+                  e.target.setPointerCapture(e.pointerId); 
+                  setResizeState({ startX: e.clientX, startHours: hoursCount }); 
+                }}
+              />
+
+              {/* 可见的手柄外观 (幽灵态，完全不阻挡点击，让手指穿透到下面的时间线) */}
+              {!!resizeState && <div className="absolute -top-6 bg-stone-800 text-stone-100 text-xs px-2 py-1 rounded shadow-md whitespace-nowrap animate-in fade-in zoom-in duration-150">{hoursCount} 段</div>}
+              <div className={`w-4 h-10 border rounded-md transition-colors flex items-center justify-center shadow-sm ${!!resizeState ? 'bg-stone-200 border-stone-500 scale-110' : 'bg-stone-100 border-stone-300 group-hover:border-stone-500 group-hover:bg-stone-200'}`}>
+                <div className="w-[2px] h-4 bg-stone-400 rounded-full" />
+              </div>
             </div>
 
             <div className="absolute -translate-y-1/2 flex items-center z-40 interactive-element" style={{ top: `${BASE_Y}px`, left: `${totalWidth + 32}px` }}>
