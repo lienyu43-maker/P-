@@ -121,6 +121,13 @@ const pinCursorStyle = {
   cursor: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%23ef4444' stroke='%23ef4444' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='8' r='5'></circle><line x1='12' y1='13' x2='12' y2='22'></line></svg>") 12 22, crosshair` 
 };
 
+// 新增：时间格式化工具，用于手机端手指按下的实时显示
+const formatMinsToTime = (mins) => {
+  const h = Math.floor(mins / 60);
+  const m = Math.floor(mins % 60);
+  return `${h}:${m.toString().padStart(2, '0')}`;
+};
+
 // --- 主应用组件 ---
 export default function App() {
   // --- 自动注入 Tailwind 样式库 (新手免配置补丁) ---
@@ -131,13 +138,34 @@ export default function App() {
       script.src = 'https://cdn.tailwindcss.com';
       document.head.appendChild(script);
     }
+    
+    // 新增：注入移动端 Viewport 防止双击缩放和页面回弹
+    let metaViewport = document.querySelector('meta[name=viewport]');
+    if (!metaViewport) {
+      metaViewport = document.createElement('meta');
+      metaViewport.name = 'viewport';
+      document.head.appendChild(metaViewport);
+    }
+    metaViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+
     // 强制覆盖 Vite 默认的全局样式，防止 UI 崩溃或被强行居中挤压
     if (!document.getElementById('vite-reset')) {
       const style = document.createElement('style');
       style.id = 'vite-reset';
       style.innerHTML = `
         #root { max-width: 100% !important; margin: 0 !important; padding: 0 !important; text-align: left !important; width: 100%; }
-        body { margin: 0 !important; display: block !important; min-width: 100vw !important; min-height: 100vh !important; background-color: #fafaf9; }
+        body { margin: 0 !important; display: block !important; min-width: 100vw !important; min-height: 100vh !important; background-color: #fafaf9; overscroll-behavior: none; }
+        
+        /* 手机端屏蔽自定义鼠标样式 */
+        @media (hover: none) and (pointer: coarse) {
+          .mobile-no-cursor { cursor: default !important; }
+        }
+        
+        /* 强制横屏提示样式 */
+        #portrait-warning { display: none; }
+        @media screen and (orientation: portrait) {
+          #portrait-warning { display: flex; }
+        }
       `;
       document.head.appendChild(style);
     }
@@ -392,8 +420,10 @@ export default function App() {
     return Math.round((x / PIXELS_PER_MINUTE) / SNAP_MINS) * SNAP_MINS; 
   };
 
+  // 修改：加入 e.target.setPointerCapture 锁定触摸焦点，防止拖拽时失效
   const handleTrackPointerDown = (e) => {
     if (e.target.closest('.interactive-element')) return;
+    e.target.setPointerCapture(e.pointerId);
     const mins = getMinsFromPointerX(e.clientX);
     const constrainedMins = Math.max(0, Math.min(hoursCount * 60, mins));
     setTrackDragState({ startMins: constrainedMins, currentMins: constrainedMins });
@@ -401,11 +431,15 @@ export default function App() {
   };
 
   const handlePinPointerDown = (pin, e) => {
-    e.stopPropagation(); setConnectingPin(pin); setDragCurrentPos(getRelativePos(e.clientX, e.clientY));
+    e.stopPropagation(); 
+    e.target.setPointerCapture(e.pointerId);
+    setConnectingPin(pin); 
+    setDragCurrentPos(getRelativePos(e.clientX, e.clientY));
   };
 
   const handleLabelPointerDown = (item, type, e) => {
     e.stopPropagation(); e.preventDefault();
+    e.target.setPointerCapture(e.pointerId);
     setDraggingLabel({ id: item.id, type: type, startX: e.clientX, startY: e.clientY, startOffsetX: item.offset?.x || 0, startOffsetY: item.offset?.y || (type === 'pin' ? -50 : -45) });
   };
 
@@ -430,7 +464,10 @@ export default function App() {
     if (connectingPin) setDragCurrentPos(getRelativePos(e.clientX, e.clientY));
   };
 
+  // 修改：拖拽结束时释放焦点
   const handlePointerUp = (e) => {
+    try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
+    
     if (trackDragState) {
       const { startMins, currentMins } = trackDragState;
       if (Math.abs(currentMins - startMins) < 10) {
@@ -498,7 +535,20 @@ export default function App() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
+      {/* 新增：强制横屏遮罩 */}
+      <div id="portrait-warning" className="fixed inset-0 z-[9999] bg-stone-900 flex-col items-center justify-center text-stone-100">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-6 animate-pulse">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+          <line x1="12" y1="18" x2="12.01" y2="18"></line>
+          <path d="M20 9l-3-3-3 3"></path>
+          <path d="M4 15l3 3 3-3"></path>
+        </svg>
+        <h2 className="text-2xl font-bold tracking-widest mb-3">请旋转手机</h2>
+        <p className="text-stone-400 text-sm">为了获得最佳体验，请将手机横屏使用</p>
+      </div>
+
       <header className="pl-8 pr-8 pt-8 pb-4 flex justify-between items-center opacity-70 shrink-0 z-40">
         <div className="flex items-center gap-2">
           <button 
@@ -607,7 +657,18 @@ export default function App() {
       <main className={`flex-1 relative w-full overflow-hidden flex flex-col justify-center ${showGallery ? 'invisible' : 'visible'}`}>
         <div className="w-full overflow-x-auto pb-10 pt-10 custom-scrollbar outline-none" ref={trackRef}>
           <div className="relative h-[480px] mx-12 min-w-[800px]" ref={containerRef} style={{ width: `${totalWidth + 120}px` }}>
-            <div className="absolute left-0 w-full z-0" style={{ top: '240px', height: '100px', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
+            {/* 修改：加入 mobile-no-cursor 隐藏鼠标，touch-none 允许手指直接画线而不滚动页面 */}
+            <div className="absolute left-0 w-full z-0 mobile-no-cursor touch-none" style={{ top: '240px', height: '100px', ...pinCursorStyle }} onPointerDown={handleTrackPointerDown} />
+
+            {/* 新增：移动端替代鼠标悬停的垂直时间基准线 */}
+            {trackDragState && (
+              <div className="absolute z-50 pointer-events-none flex flex-col items-center transition-none" style={{ left: `${trackDragState.currentMins * PIXELS_PER_MINUTE}px`, top: '180px', bottom: '0', width: '2px' }}>
+                <div className="w-[2px] h-full bg-red-400 opacity-60" />
+                <div className="absolute top-[15px] bg-red-500 text-white text-[11px] px-2 py-0.5 rounded-full shadow-md font-mono whitespace-nowrap">
+                  {formatMinsToTime(trackDragState.currentMins)}
+                </div>
+              </div>
+            )}
 
             {trackDragState && Math.abs(trackDragState.currentMins - trackDragState.startMins) >= 10 && (
               (() => {
@@ -689,17 +750,19 @@ export default function App() {
               return (
                 <div key={range.id} onPointerDownCapture={() => setActiveZId(range.id)} className={`absolute -translate-y-1/2 group transition-all duration-300 interactive-element ${activeZId === range.id ? 'z-50' : 'z-30'}`} style={{ left: `${leftPos}px`, width: `${width}px`, top: `${topPos}px` }}>
                   <div className="absolute top-0 -translate-y-1/2 w-full flex items-center group-hover:opacity-80 transition-opacity z-20">
-                    <div className="w-[2px] h-[14px] bg-stone-700 rounded-sm" />
-                    <div className="flex-1 h-[2px] bg-stone-700" />
-                    <div className="w-[2px] h-[14px] bg-stone-700 rounded-sm" />
+                    {/* 修改：添加 touch-none 防止误触页面滚动 */}
+                    <div className="w-[2px] h-[14px] bg-stone-700 rounded-sm touch-none" />
+                    <div className="flex-1 h-[2px] bg-stone-700 touch-none" />
+                    <div className="w-[2px] h-[14px] bg-stone-700 rounded-sm touch-none" />
                   </div>
                   <div className="absolute left-1/2 top-0" style={{ width: 0, height: 0 }}>
                     <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0, zIndex: -1 }}>
                       <line x1={0} y1={0} x2={offset.x} y2={offset.y} stroke="#a8a29e" strokeDasharray="4 3" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
-                    <div className="absolute flex flex-col items-center group/label z-10" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
-                      <div className="w-full h-4 -mb-1 cursor-move opacity-0 group-hover/label:opacity-100 flex justify-center items-center" onPointerDown={(e) => handleLabelPointerDown(range, 'range', e)}>
-                        <div className="w-6 h-1 bg-stone-300 rounded-full" />
+                    <div className="absolute flex flex-col items-center group/label z-10 touch-none" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
+                      {/* 修改：放大手机端拖拽把手（w-8 h-6），常态微透(opacity-30)提示用户可以拖动 */}
+                      <div className="w-full h-6 -mb-2 cursor-move opacity-30 group-hover/label:opacity-100 flex justify-center items-center touch-none" onPointerDown={(e) => handleLabelPointerDown(range, 'range', e)}>
+                        <div className="w-8 h-1.5 bg-stone-300 rounded-full" />
                       </div>
                       <div className="relative flex justify-center items-center">
                         <EventInput text={range.text} onChange={(t) => updateRangeText(range.id, t)} placeholder="记录时光" />
@@ -727,9 +790,10 @@ export default function App() {
                   <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0, zIndex: -1 }}>
                     <line x1={0} y1={-16} x2={offset.x} y2={offset.y} stroke="#a8a29e" strokeDasharray="4 3" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
-                  <div className="absolute flex flex-col items-center group/label z-10" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
-                    <div className="w-full h-4 -mb-1 cursor-move opacity-0 group-hover/label:opacity-100 flex justify-center items-center" onPointerDown={(e) => handleLabelPointerDown(pin, 'pin', e)}>
-                      <div className="w-6 h-1 bg-stone-300 rounded-full" />
+                  <div className="absolute flex flex-col items-center group/label z-10 touch-none" style={{ left: `${offset.x}px`, top: `${offset.y}px`, transform: 'translate(-50%, -50%)' }}>
+                    {/* 修改：放大拖拽把手 */}
+                    <div className="w-full h-6 -mb-2 cursor-move opacity-30 group-hover/label:opacity-100 flex justify-center items-center touch-none" onPointerDown={(e) => handleLabelPointerDown(pin, 'pin', e)}>
+                      <div className="w-8 h-1.5 bg-stone-300 rounded-full" />
                     </div>
                     <div className="relative flex justify-center items-center">
                       <EventInput text={pin.text} onChange={(t) => updatePinText(pin.id, t)} placeholder="写点什么" />
@@ -738,7 +802,8 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  <div className={`absolute w-4 h-4 rounded-full border-2 border-stone-50 cursor-grab active:cursor-grabbing hover:scale-125 transition-transform z-30 ${isConnecting ? 'bg-stone-800' : 'bg-red-500'} shadow-sm interactive-element`} style={{ left: 0, top: -16, transform: 'translate(-50%, -50%)' }} onPointerDown={(e) => handlePinPointerDown(pin, e)}>
+                  {/* 修改：扩大红点判定区域（w-6 h-6），加入 touch-none 解决手机端连线难的问题 */}
+                  <div className={`absolute w-6 h-6 rounded-full border-2 border-stone-50 cursor-grab active:cursor-grabbing hover:scale-125 transition-transform z-30 ${isConnecting ? 'bg-stone-800' : 'bg-red-500'} shadow-sm interactive-element touch-none`} style={{ left: 0, top: -16, transform: 'translate(-50%, -50%)' }} onPointerDown={(e) => handlePinPointerDown(pin, e)}>
                     <div className="absolute inset-0 rounded-full bg-red-500 opacity-0 hover:opacity-20 scale-150 pointer-events-none" />
                   </div>
                   <div className="absolute w-[2px] h-4 bg-stone-300 transition-colors z-0" style={{ left: 0, top: 0, transform: 'translate(-50%, -100%)' }} />
