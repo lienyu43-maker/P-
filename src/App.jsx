@@ -515,7 +515,7 @@ export default function App() {
             {/* 【极致优化：空心力场】中间穿透可以 Pin，只有上下两端可以拖拽拉伸时间线 */}
             <div 
               className="absolute -translate-y-1/2 flex items-center justify-center group z-50 pointer-events-none" 
-              style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)}px`, width: '44px', height: '64px', transform: 'translate(-50%, -50%)' }} 
+              style={{ top: `${BASE_Y}px`, left: `${Math.round(totalWidth)+18}px`, width: '44px', height: '64px', transform: 'translate(-50%, -50%)' }} 
             >
               {/* 上半部分力场 (实体制，拦截触摸并触发拉伸) */}
               <div 
@@ -544,7 +544,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="absolute -translate-y-1/2 flex items-center z-40 interactive-element" style={{ top: `${BASE_Y}px`, left: `${totalWidth + 32}px` }}>
+            <div className="absolute -translate-y-1/2 flex items-center z-40 interactive-element" style={{ top: `${BASE_Y}px`, left: `${totalWidth + 47}px` }}>
               {!isNamingRecord ? (
                 <button onClick={(e) => { e.stopPropagation(); setIsNamingRecord(true); }} className="w-8 h-8 flex items-center justify-center text-stone-400 hover:text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-full transition-all duration-300 shadow-sm interactive-element" title="归档保存"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></button>
               ) : (
